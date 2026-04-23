@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: education-office-management
+    env: docker
+    plan: free
+    region: ohio
+    envVars:
+      - key: PORT
+        value: 8080
