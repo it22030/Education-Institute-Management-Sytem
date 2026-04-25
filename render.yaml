@@ -7,8 +7,11 @@ services:
     envVars:
       - key: PORT
         value: 8080
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
       - key: SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE
-        value: 1
+        value: 2
       - key: SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE
         value: 1
+
 
