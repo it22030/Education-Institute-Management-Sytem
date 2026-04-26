@@ -797,20 +797,72 @@ async function showMarkSheetUI() {
         bestCtCount:     configData.bestCtCount     ?? 1,
         assignmentTotal: configData.assignmentTotal ?? 0
     };
+    window._currentCtExams = subConfig.ctExamNames;
 
-    let html = `<div class="config-panel">
-        <h4>⚙️ Mark Sheet Configuration</h4>
-        <div class="flex-row">
+    const renderCtExamList = () => {
+        return `
+        <div id="ctExamSelection" style="background:#fff; border:1px solid #cfdfed; border-radius:20px; padding:12px; margin-top:8px;">
+            <div id="selectedCtList" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
+                ${subConfig.ctExamNames.map((ct, i) => `
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:#f0f7ff; padding:6px 12px; border-radius:12px; border:1px solid #1f6392;">
+                        <span style="font-weight:600; font-size:0.85rem;">${i+1}. ${escapeHtml(ct)}</span>
+                        <div class="flex-row" style="gap:4px;">
+                            <button onclick="moveExam(${i}, -1)" style="background:none; color:#1f6392; padding:4px; font-size:12px;" title="Move Up">🔼</button>
+                            <button onclick="moveExam(${i}, 1)" style="background:none; color:#1f6392; padding:4px; font-size:12px;" title="Move Down">🔽</button>
+                            <button onclick="removeExam('${escapeHtml(ct)}')" style="background:none; color:#be123c; padding:4px; font-size:12px;" title="Remove">✖</button>
+                        </div>
+                    </div>
+                `).join('')}
+                ${subConfig.ctExamNames.length === 0 ? '<p style="font-size:0.8rem; color:#64748b;">No CT exams selected.</p>' : ''}
+            </div>
+            <div style="display:flex; gap:8px;">
+                <select id="availableExams" style="flex:1; margin:0;">
+                    <option value="">-- Add Exam to CT List --</option>
+                    ${allExamNames.filter(en => !subConfig.ctExamNames.includes(en)).map(en => `<option value="${en}">${escapeHtml(en)}</option>`).join('')}
+                </select>
+                <button onclick="addExamToCt()" style="padding:8px 16px;">Add</button>
+            </div>
+        </div>`;
+    };
+
+    let html = `<div class="config-panel" style="background: linear-gradient(145deg, #f8fafc, #eff6ff); border: 1px solid #e2e8f0;">
+        <h4 style="color:#0b2b3b; margin-bottom:15px; display:flex; align-items:center; gap:8px;">⚙️ Mark Sheet Configuration</h4>
+        <div class="flex-row" style="align-items: flex-start;">
             <div style="flex:1"><label>Attendance Total</label><input type="number" id="attTotal" value="${subConfig.attendanceTotal}" step="0.01"></div>
             <div style="flex:1"><label>Best CT Count</label><input type="number" id="bestCtCount" value="${subConfig.bestCtCount}" min="1"></div>
             <div style="flex:1"><label>Regular Assessment Total</label><input type="number" id="assignTotal" value="${subConfig.assignmentTotal}" step="0.01"></div>
         </div>
-        <label>CT Exams (hold Ctrl/Cmd for multi)</label>
-        <select id="ctExamSelect" multiple size="3">
-            ${allExamNames.map(en => `<option value="${en}" ${subConfig.ctExamNames.includes(en) ? 'selected' : ''}>${escapeHtml(en)}</option>`).join('')}
-        </select>
-        <button onclick="saveMarkSheetConfig('${sub.courseId}','${sub.subjectId}')" style="margin-top:10px;">Save Config & Refresh</button>
+        <div style="margin-top:10px;">
+            <label style="margin-bottom:2px;">Select & Order CT Exams</label>
+            <div id="ctListContainer">${renderCtExamList()}</div>
+        </div>
+        <button onclick="saveMarkSheetConfig('${sub.courseId}','${sub.subjectId}')" style="margin-top:15px; width:100%; background:#1f6392; padding:12px;">💾 Save Configuration & Refresh Table</button>
     </div>`;
+
+    window.moveExam = (index, direction) => {
+        const newIndex = index + direction;
+        if (newIndex < 0 || newIndex >= subConfig.ctExamNames.length) return;
+        const temp = subConfig.ctExamNames[index];
+        subConfig.ctExamNames[index] = subConfig.ctExamNames[newIndex];
+        subConfig.ctExamNames[newIndex] = temp;
+        document.getElementById('ctListContainer').innerHTML = renderCtExamList();
+        updateAllRows(true);
+    };
+
+    window.removeExam = (name) => {
+        subConfig.ctExamNames = subConfig.ctExamNames.filter(n => n !== name);
+        document.getElementById('ctListContainer').innerHTML = renderCtExamList();
+        updateAllRows(true);
+    };
+
+    window.addExamToCt = () => {
+        const sel = document.getElementById('availableExams');
+        const val = sel.value;
+        if (!val) return;
+        subConfig.ctExamNames.push(val);
+        document.getElementById('ctListContainer').innerHTML = renderCtExamList();
+        updateAllRows(true);
+    };
 
     html += `<div style="overflow-x:auto;"><table class="mark-sheet-table"><thead><tr>
         <th>SL</th><th>Roll/ID</th><th>Name</th>
@@ -863,7 +915,7 @@ async function showMarkSheetUI() {
         subConfig.attendanceTotal = parseFloat(document.getElementById('attTotal').value) || 0;
         subConfig.bestCtCount     = parseInt(document.getElementById('bestCtCount').value) || 1;
         subConfig.assignmentTotal = parseFloat(document.getElementById('assignTotal').value) || 0;
-        subConfig.ctExamNames     = Array.from(document.getElementById('ctExamSelect').selectedOptions).map(o => o.value);
+        // subConfig.ctExamNames is updated by the add/remove/move functions
         
         if (fullReRender) {
             showMarkSheetUI(); 
@@ -904,7 +956,7 @@ async function showMarkSheetUI() {
     document.getElementById('attTotal').addEventListener('input', () => updateAllRows(false));
     document.getElementById('bestCtCount').addEventListener('input', () => updateAllRows(false));
     document.getElementById('assignTotal').addEventListener('input', () => updateAllRows(false));
-    document.getElementById('ctExamSelect').addEventListener('change', () => updateAllRows(true));
+    // No more ctExamSelect change listener needed here as add/remove/move handle it
     attachAssignmentListeners();
 }
 
@@ -918,10 +970,15 @@ window.deleteExamAllStudents = async (courseId, subjectId, examName) => {
 };
 
 window.saveMarkSheetConfig = async (courseId, subjectId) => {
-    const attTotal  = parseFloat(document.getElementById('attTotal').value);
-    const bestCt    = parseInt(document.getElementById('bestCtCount').value);
-    const assignTot = parseFloat(document.getElementById('assignTotal').value);
-    const ctExamNames = Array.from(document.getElementById('ctExamSelect').selectedOptions).map(o => o.value);
+    const attTotal  = parseFloat(document.getElementById('attTotal').value) || 0;
+    const bestCt    = parseInt(document.getElementById('bestCtCount').value) || 1;
+    const assignTot = parseFloat(document.getElementById('assignTotal').value) || 0;
+    // subConfig is not directly available here, so we might need a way to pass ctExamNames
+    // Actually, subConfig is in the scope of showMarkSheetUI, so I should define saveMarkSheetConfig inside it or pass the names.
+    // I'll update showMarkSheetUI to define these globally or pass them.
+    // For now, I'll use a globally accessible variable for current names.
+    const ctExamNames = window._currentCtExams || []; 
+
     try {
         await apiPost(`/marks/config`, { courseId, subjectId, attendanceTotal: attTotal, bestCtCount: bestCt, assignmentTotal: assignTot, ctExamNames });
         showToast('Configuration saved');
@@ -1176,53 +1233,126 @@ async function loadAdminContent(tab) {
             const [courses, batches, teachers] = await Promise.all([
                 apiGet('/courses'), apiGet('/batches'), apiGet('/users?role=teacher')
             ]);
-            let html = `<div class="card"><h3>📚 Courses & Subjects</h3>`;
+            let html = `<div class="card" style="background: linear-gradient(145deg, #ffffff, #f0f7ff);">
+                <div class="flex-row" style="justify-content:space-between; margin-bottom:20px;">
+                    <h3>📚 Academic Courses & Subjects</h3>
+                    <button onclick="toggleElement('courseCreationForm')" style="background:#1f6392; padding:8px 20px;">+ New Course</button>
+                </div>
+                
+                <div id="courseCreationForm" style="display:none; background:rgba(255,255,255,0.7); backdrop-filter:blur(10px); padding:20px; border-radius:24px; border:1px solid #e0e7ff; margin-bottom:24px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);">
+                    <h4>✨ Create New Course</h4>
+                    <div class="flex-row">
+                        <div style="flex:2"><label>Course Name</label><input id="newCourseName" placeholder="e.g. Science Batch 2024"></div>
+                        <div style="flex:1"><label>Fee (Tk)</label><input id="newCourseFee" type="number" placeholder="5000"></div>
+                        <div style="flex:1"><label>Batch</label>
+                            <select id="newCourseBatch">${batches.map(b=>`<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('')}</select>
+                        </div>
+                        <button onclick="createCourse()" style="align-self:flex-end; padding:12px 30px;">🚀 Create Course</button>
+                    </div>
+                </div>
+
+                <div class="courses-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:20px;">`;
+            
             courses.forEach(c => {
                 const bName = batches.find(b=>b.id==c.batchId)?.name || 'N/A';
-                html += `<div style="border:1px solid #eef2f7; border-radius:20px; padding:12px; margin-bottom:12px;">
-                    <b>${escapeHtml(c.name)}</b> (Fee:${c.fee}) Batch:${escapeHtml(bName)}<br>
-                    <strong>Subjects:</strong>
-                    ${c.subjects.map(s=>`<span style="background:#eef2f7; padding:4px 12px; border-radius:40px; margin:2px;">
-                        ${escapeHtml(s.name)} (${teachers.find(t=>t.id==s.teacherId)?.name||'No teacher'})
-                        <button onclick="deleteSubject(${c.id},${s.id})" style="background:#c44536; padding:2px 8px;">✖</button>
-                    </span>`).join(' ')}<br>
-                    <button onclick="showAddSubjectForm(${c.id})">+ Add Subject</button>
-                    <button onclick="deleteCourse(${c.id})" style="background:#c44536;">Delete Course</button>
-                    <div id="addSubj-${c.id}" style="display:none; margin-top:10px;">
-                        <label>Subject Name</label><input id="newSubjName-${c.id}" placeholder="Subject">
-                        <label>Teacher</label>
-                        <select id="newSubjTeacher-${c.id}">
-                            ${teachers.map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
-                        </select>
-                        <button onclick="addSubjectToCourse(${c.id})">Add Subject</button>
+                html += `
+                <div class="course-premium-card" style="background:white; border-radius:24px; padding:20px; border:1px solid #eef2f7; box-shadow:0 4px 6px -1px rgba(0,0,0,0.1); transition:0.3s;">
+                    <div class="flex-row" style="justify-content:space-between; align-items:flex-start;">
+                        <div>
+                            <h4 id="courseNameDisp-${c.id}" style="color:#0b2b3b; font-size:1.1rem; margin-bottom:4px;">${escapeHtml(c.name)}</h4>
+                            <span style="background:#e0f2fe; color:#0369a1; padding:2px 10px; border-radius:40px; font-size:0.75rem; font-weight:600;">Batch: ${escapeHtml(bName)}</span>
+                            <span style="background:#fef3c7; color:#92400e; padding:2px 10px; border-radius:40px; font-size:0.75rem; font-weight:600; margin-left:5px;">Fee: ${c.fee} Tk</span>
+                        </div>
+                        <div class="flex-row" style="gap:5px;">
+                            <button onclick="showEditCourseForm(${c.id}, '${escapeHtml(c.name)}', ${c.fee}, ${c.batchId})" style="background:#f1f5f9; color:#475569; padding:6px; border-radius:12px;">✏️</button>
+                            <button onclick="deleteCourse(${c.id})" style="background:#fff1f2; color:#be123c; padding:6px; border-radius:12px;">🗑️</button>
+                        </div>
+                    </div>
+
+                    <div id="editCourseForm-${c.id}" style="display:none; margin-top:15px; padding:15px; background:#f8fafc; border-radius:16px;">
+                        <input id="editCourseName-${c.id}" value="${escapeHtml(c.name)}">
+                        <input id="editCourseFee-${c.id}" type="number" value="${c.fee}">
+                        <select id="editCourseBatch-${c.id}">${batches.map(b=>`<option value="${b.id}" ${b.id==c.batchId?'selected':''}>${escapeHtml(b.name)}</option>`).join('')}</select>
+                        <div class="flex-row" style="margin-top:10px;">
+                            <button onclick="updateCourse(${c.id})" style="font-size:0.8rem; flex:1;">Update</button>
+                            <button onclick="hideEditCourseForm(${c.id})" style="background:#64748b; font-size:0.8rem; flex:1;">Cancel</button>
+                        </div>
+                    </div>
+
+                    <div style="margin-top:20px;">
+                        <h5 style="color:#64748b; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.05em; margin-bottom:10px;">Subjects & Teachers</h5>
+                        <div id="subjectsList-${c.id}" style="display:flex; flex-direction:column; gap:8px;">
+                            ${c.subjects.map(s => {
+                                const teacher = teachers.find(t=>t.id==s.teacherId);
+                                return `
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:#f1f5f9; padding:8px 12px; border-radius:16px; border-left:4px solid #1f6392;">
+                                    <div style="flex:1">
+                                        <div style="font-weight:600; color:#1e293b; font-size:0.9rem;">${escapeHtml(s.name)}</div>
+                                        <div style="font-size:0.75rem; color:#64748b;">👨‍🏫 ${escapeHtml(teacher?.name || 'Unassigned')}</div>
+                                    </div>
+                                    <div class="flex-row" style="gap:5px;">
+                                        <button onclick="showEditSubjectForm(${c.id}, ${s.id}, '${escapeHtml(s.name)}', ${s.teacherId})" style="background:none; color:#1f6392; padding:4px; font-size:0.8rem;">✏️</button>
+                                        <button onclick="deleteSubject(${c.id},${s.id})" style="background:none; color:#be123c; padding:4px; font-size:0.8rem;">✖</button>
+                                    </div>
+                                </div>
+                                <div id="editSubjForm-${s.id}" style="display:none; margin:5px 0; padding:10px; background:#fff; border:1px solid #e2e8f0; border-radius:12px;">
+                                    <input id="editSubjName-${s.id}" value="${escapeHtml(s.name)}">
+                                    <select id="editSubjTeacher-${s.id}">
+                                        ${teachers.map(t=>`<option value="${t.id}" ${t.id==s.teacherId?'selected':''}>${escapeHtml(t.name)}</option>`).join('')}
+                                    </select>
+                                    <button onclick="updateSubject(${c.id}, ${s.id})" style="font-size:0.7rem; width:100%;">Update Subject</button>
+                                </div>
+                                `;
+                            }).join('')}
+                        </div>
+                        <button onclick="showAddSubjectForm(${c.id})" style="width:100%; margin-top:15px; background:none; color:#1f6392; border:2px dashed #cbd5e1; border-radius:16px; padding:10px; font-size:0.85rem; font-weight:600;">+ Add New Subject</button>
+                        
+                        <div id="addSubj-${c.id}" style="display:none; margin-top:15px; padding:15px; background:#f8fafc; border-radius:16px; border:1px solid #e2e8f0;">
+                            <label>Subject Name</label><input id="newSubjName-${c.id}" placeholder="e.g. Physics">
+                            <label>Teacher</label>
+                            <select id="newSubjTeacher-${c.id}">
+                                ${teachers.map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
+                            </select>
+                            <button onclick="addSubjectToCourse(${c.id})" style="width:100%; margin-top:10px;">Confirm Add</button>
+                        </div>
                     </div>
                 </div>`;
             });
-            html += `<hr><h4>Create New Course</h4>
-                <div class="flex-row">
-                    <div style="flex:1"><label>Course Name</label><input id="newCourseName"></div>
-                    <div style="flex:1"><label>Fee (Tk)</label><input id="newCourseFee" type="number"></div>
-                    <div style="flex:1"><label>Batch</label>
-                        <select id="newCourseBatch">${batches.map(b=>`<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('')}</select>
-                    </div>
-                    <button onclick="createCourse()" style="align-self:flex-end;">Create</button>
-                </div>
-            </div>`;
+            html += `</div></div>`;
             cont.innerHTML = html;
 
-            window.showAddSubjectForm = id => {
-                const d = document.getElementById(`addSubj-${id}`);
-                if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
+            window.toggleElement = id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+            };
+            window.showAddSubjectForm = id => toggleElement(`addSubj-${id}`);
+            window.showEditCourseForm = (id) => toggleElement(`editCourseForm-${id}`);
+            window.hideEditCourseForm = (id) => document.getElementById(`editCourseForm-${id}`).style.display = 'none';
+            window.showEditSubjectForm = (cid, sid) => toggleElement(`editSubjForm-${sid}`);
+
+            window.updateCourse = async (id) => {
+                const name = document.getElementById(`editCourseName-${id}`).value;
+                const fee  = document.getElementById(`editCourseFee-${id}`).value;
+                const bid  = document.getElementById(`editCourseBatch-${id}`).value;
+                try { await apiPut(`/courses/${id}`, { name, fee, batchId: bid }); showToast('Course updated'); loadAdminContent('courses'); }
+                catch (e) { showToast('Update failed', 'error'); }
+            };
+            window.updateSubject = async (cid, sid) => {
+                const name = document.getElementById(`editSubjName-${sid}`).value;
+                const tid  = document.getElementById(`editSubjTeacher-${sid}`).value;
+                try { await apiPut(`/subjects/${sid}`, { name, teacherId: tid }); showToast('Subject updated'); loadAdminContent('courses'); }
+                catch (e) { showToast('Update failed', 'error'); }
             };
             window.addSubjectToCourse = async id => {
                 const name = document.getElementById(`newSubjName-${id}`).value;
                 const tid  = document.getElementById(`newSubjTeacher-${id}`).value;
                 if (!name || !tid) return showToast('Subject name and teacher required', 'error');
-                try { await apiPost(`/courses/${id}/subjects`, { name, teacherId: tid }); loadAdminContent('courses'); }
+                try { await apiPost(`/courses/${id}/subjects`, { name, teacherId: tid }); showToast('Subject added'); loadAdminContent('courses'); }
                 catch (e) { showToast('Failed', 'error'); }
             };
             window.deleteSubject = async (cid, sid) => {
-                try { await apiDelete(`/subjects/${sid}`); loadAdminContent('courses'); }
+                if (!confirm('Delete this subject?')) return;
+                try { await apiDelete(`/subjects/${sid}`); showToast('Subject deleted'); loadAdminContent('courses'); }
                 catch (e) { showToast('Failed', 'error'); }
             };
             window.createCourse = async () => {
@@ -1230,12 +1360,12 @@ async function loadAdminContent(tab) {
                 const fee  = parseInt(document.getElementById('newCourseFee').value);
                 const bid  = document.getElementById('newCourseBatch').value;
                 if (!name || isNaN(fee)) return showToast('Valid name and fee required', 'error');
-                try { await apiPost('/courses', { name, fee, batchId: bid }); loadAdminContent('courses'); }
+                try { await apiPost('/courses', { name, fee, batchId: bid }); showToast('Course created'); loadAdminContent('courses'); }
                 catch (e) { showToast('Failed', 'error'); }
             };
             window.deleteCourse = async id => {
                 if (!confirm('⚠️ Delete this course and all related data?')) return;
-                try { await apiDelete(`/courses/${id}`); loadAdminContent('courses'); }
+                try { await apiDelete(`/courses/${id}`); showToast('Course deleted'); loadAdminContent('courses'); }
                 catch (e) { showToast('Failed', 'error'); }
             };
 

@@ -83,4 +83,14 @@ public class CourseController {
         courseRepository.deleteById(id);
         return ResponseEntity.ok().build();
     }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateCourse(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
+        Course course = courseRepository.findById(id).orElseThrow();
+        course.setName(payload.get("name").toString());
+        course.setFee(Integer.parseInt(payload.get("fee").toString()));
+        Long batchId = Long.parseLong(payload.get("batchId").toString());
+        course.setBatch(batchRepository.findById(batchId).orElseThrow());
+        return ResponseEntity.ok(courseRepository.save(course));
+    }
 }

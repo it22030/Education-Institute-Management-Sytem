@@ -359,10 +359,47 @@ label {
     color: white;
 }
 
-/* ============================================================
-   MOBILE RESPONSIVE
-   ============================================================ */
+/* ---- Premium Course Cards ---- */
+.courses-grid {
+    margin-top: 20px;
+}
+
+.course-premium-card {
+    background: white;
+    border: 1px solid #eef2f7;
+    transition: all 0.3s ease;
+}
+
+.course-premium-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 20px -5px rgba(0,0,0,0.1) !important;
+    border-color: #1f6392 !important;
+}
+
+.course-premium-card h4 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+#courseCreationForm {
+    animation: slideDown 0.4s ease-out;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- CT Selection UI ---- */
+#ctExamSelection button:hover {
+    background: #e0f2fe;
+}
+
+/* ---- Responsive Fixes ---- */
 @media (max-width: 700px) {
+    .courses-grid {
+        grid-template-columns: 1fr !important;
+    }
     .dashboard { padding: 12px; }
     .card { padding: 14px; }
     .card h3 { font-size: 1rem; margin-bottom: 12px; }

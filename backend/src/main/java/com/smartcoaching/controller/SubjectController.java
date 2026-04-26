@@ -16,9 +16,11 @@ import java.util.stream.Collectors;
 public class SubjectController {
 
     private final SubjectRepository subjectRepository;
+    private final com.smartcoaching.repository.UserRepository userRepository;
 
-    public SubjectController(SubjectRepository subjectRepository) {
+    public SubjectController(SubjectRepository subjectRepository, com.smartcoaching.repository.UserRepository userRepository) {
         this.subjectRepository = subjectRepository;
+        this.userRepository = userRepository;
     }
 
     @Transactional
@@ -43,5 +45,16 @@ public class SubjectController {
     public ResponseEntity<?> deleteSubject(@PathVariable Long id) {
         subjectRepository.deleteById(id);
         return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateSubject(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
+        Subject subject = subjectRepository.findById(id).orElseThrow();
+        subject.setName(payload.get("name").toString());
+        if (payload.containsKey("teacherId")) {
+            Long teacherId = Long.parseLong(payload.get("teacherId").toString());
+            subject.setTeacher(userRepository.findById(teacherId).orElse(null));
+        }
+        return ResponseEntity.ok(subjectRepository.save(subject));
     }
 }
