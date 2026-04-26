@@ -821,7 +821,7 @@ async function showMarkSheetUI() {
         <th>Total</th><th>Action</th>
     </tr></thead><tbody id="markSheetBody">`;
 
-    function getRowHtml(s, idx) {
+    function getRowHtml(s, idx, preservedAssignVal = null) {
         const sAtt        = allAttendance.filter(a => a.studentId == s.id);
         const present     = sAtt.filter(r => r.status === 'present').length;
         const attMarks    = sAtt.length ? (present / sAtt.length) * subConfig.attendanceTotal : 0;
@@ -831,9 +831,11 @@ async function showMarkSheetUI() {
         });
         const bestCtNum   = Math.min(subConfig.bestCtCount, ctMarks.length);
         const ctAvg       = bestCtNum > 0 ? [...ctMarks].sort((a,b)=>b-a).slice(0,bestCtNum).reduce((a,b)=>a+b,0)/bestCtNum : 0;
+        
         const assignMark  = allMarks.find(m => m.studentId == s.id && m.examName === 'Regular Assessment');
-        const assignVal   = assignMark ? assignMark.obtained : 0;
-        const total       = attMarks + ctAvg + assignVal;
+        const assignVal   = preservedAssignVal !== null ? preservedAssignVal : (assignMark ? assignMark.obtained : "");
+        
+        const total       = attMarks + ctAvg + (parseFloat(assignVal) || 0);
 
         return `
             <td>${idx+1}</td><td>${escapeHtml(s.rollNo||'N/A')}</td><td>${escapeHtml(s.name)}</td>
@@ -849,7 +851,10 @@ async function showMarkSheetUI() {
         html += `<tr data-student-index="${idx}">${getRowHtml(s, idx)}</tr>`;
     });
     html += `</tbody></table>
-    <button onclick="saveAllAssignments('${sub.courseId}','${sub.subjectId}')" style="margin-top:15px;">💾 Save All Marks</button>
+    <div class="flex-row" style="margin-top:15px;">
+        <button onclick="saveAllAssignments('${sub.courseId}','${sub.subjectId}')">💾 Save All Marks</button>
+        <button onclick="showMarkSheetUI()" style="background:#6c757d; margin-left:10px;">🔄 Refresh Table</button>
+    </div>
     </div>`;
     document.getElementById('dynamicContent').innerHTML = html;
 
@@ -861,17 +866,25 @@ async function showMarkSheetUI() {
         subConfig.ctExamNames     = Array.from(document.getElementById('ctExamSelect').selectedOptions).map(o => o.value);
         
         if (fullReRender) {
-            showMarkSheetUI(); // Fully re-render to update columns
+            showMarkSheetUI(); 
             return;
         }
 
-        document.getElementById('headerAtt').innerText = `Attendance (${subConfig.attendanceTotal})`;
-        document.getElementById('headerCtAvg').innerText = `CT Avg (Best ${subConfig.bestCtCount})`;
-        document.getElementById('headerAssign').innerHTML = `Regular Assess. (${subConfig.assignmentTotal})<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','Regular Assessment')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button>`;
+        const hAtt = document.getElementById('headerAtt');
+        if (hAtt) hAtt.innerText = `Attendance (${subConfig.attendanceTotal})`;
+        
+        const hCtAvg = document.getElementById('headerCtAvg');
+        if (hCtAvg) hCtAvg.innerText = `CT Avg (Best ${subConfig.bestCtCount})`;
+        
+        const hAssign = document.getElementById('headerAssign');
+        if (hAssign) hAssign.innerHTML = `Regular Assess. (${subConfig.assignmentTotal})<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','Regular Assessment')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button>`;
 
         students.forEach((s, idx) => {
             const tr = document.querySelector(`tr[data-student-index="${idx}"]`);
-            if (tr) tr.innerHTML = getRowHtml(s, idx);
+            if (tr) {
+                const currentInputVal = tr.querySelector('.assignment-input')?.value || "";
+                tr.innerHTML = getRowHtml(s, idx, currentInputVal);
+            }
         });
         attachAssignmentListeners();
     };
