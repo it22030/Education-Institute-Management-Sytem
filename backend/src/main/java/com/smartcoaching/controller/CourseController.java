@@ -62,7 +62,13 @@ public class CourseController {
         course.setName(payload.get("name").toString());
         course.setFee(Integer.parseInt(payload.get("fee").toString()));
         course.setBatch(batchRepository.findById(batchId).orElseThrow());
-        return ResponseEntity.ok(courseRepository.save(course));
+        Course saved = courseRepository.save(course);
+        
+        Map<String, Object> res = new HashMap<>();
+        res.put("id", saved.getId());
+        res.put("name", saved.getName());
+        res.put("fee", saved.getFee());
+        return ResponseEntity.ok(res);
     }
 
     @PostMapping("/{courseId}/subjects")
@@ -74,7 +80,13 @@ public class CourseController {
         subject.setName(payload.get("name").toString());
         subject.setCourse(course);
         subject.setTeacher(userRepository.findById(teacherId).orElse(null));
-        return ResponseEntity.ok(subjectRepository.save(subject));
+        Subject saved = subjectRepository.save(subject);
+        
+        Map<String, Object> res = new HashMap<>();
+        res.put("id", saved.getId());
+        res.put("name", saved.getName());
+        res.put("teacherId", saved.getTeacher() != null ? saved.getTeacher().getId() : null);
+        return ResponseEntity.ok(res);
     }
 
     @DeleteMapping("/{id}")
@@ -91,6 +103,12 @@ public class CourseController {
         course.setFee(Integer.parseInt(payload.get("fee").toString()));
         Long batchId = Long.parseLong(payload.get("batchId").toString());
         course.setBatch(batchRepository.findById(batchId).orElseThrow());
-        return ResponseEntity.ok(courseRepository.save(course));
+        Course saved = courseRepository.save(course);
+
+        Map<String, Object> res = new HashMap<>();
+        res.put("id", saved.getId());
+        res.put("name", saved.getName());
+        res.put("fee", saved.getFee());
+        return ResponseEntity.ok(res);
     }
 }

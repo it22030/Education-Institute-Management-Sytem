@@ -626,17 +626,18 @@ async function loadStudentContent(tab) {
             const bySubject = {};
             att.forEach(a => {
                 const key = `${a.courseId}|${a.subjectId}`;
-                if (!bySubject[key]) bySubject[key] = { courseName: a.courseName, subjectName: a.subjectName, present: 0, total: 0, records: [] };
+                if (!bySubject[key]) bySubject[key] = { courseName: a.courseName, subjectName: a.subjectName, effective: 0, total: 0, records: [] };
                 bySubject[key].total++;
-                if (a.status === 'present') bySubject[key].present++;
+                if (a.status === 'present') bySubject[key].effective++;
+                else if (a.status === 'late') bySubject[key].effective += 0.5;
                 bySubject[key].records.push(a);
             });
             let html = `<div class="card"><h3>📋 Attendance (Roll: ${escapeHtml(currentUser.rollNo || 'N/A')})</h3>`;
             for (const key in bySubject) {
                 const sub = bySubject[key];
-                const pct = sub.total ? ((sub.present/sub.total)*100).toFixed(1) : 0;
+                const pct = sub.total ? ((sub.effective/sub.total)*100).toFixed(1) : 0;
                 html += `<div class="subj-table"><h4>📘 ${escapeHtml(sub.subjectName)} (${escapeHtml(sub.courseName)})</h4>
-                    <p>Attendance: ${sub.present}/${sub.total} (${pct}%)</p>
+                    <p>Attendance (Late as 0.5): ${sub.effective}/${sub.total} (${pct}%)</p>
                     <table border="1"><thead><tr><th>Date</th><th>Status</th></tr></thead><tbody>`;
                 sub.records.forEach(r => {
                     html += `<tr><td>${new Date(r.date).toLocaleDateString()}</td><td>${r.status}</td></tr>`;
@@ -650,7 +651,7 @@ async function loadStudentContent(tab) {
         } else if (tab === 'notices') {
             await loadCombinedNotices();
         } else if (tab === 'privatemessages') {
-            const users = await apiGet('/users?role=teacher,admin');
+            const users = await apiGet('/users');
             const opts = `<option value="">-- Select Recipient --</option>` +
                 users.filter(u => u.id != currentUser.id).map(u => `<option value="${u.id}">${escapeHtml(u.name)} (${u.role})</option>`).join('');
             const msgHtml = await renderMessagesUI();
@@ -805,35 +806,46 @@ async function showMarkSheetUI() {
             <div style="flex:1"><label>Best CT Count</label><input type="number" id="bestCtCount" value="${subConfig.bestCtCount}" min="1"></div>
             <div style="flex:1"><label>Regular Assessment Total</label><input type="number" id="assignTotal" value="${subConfig.assignmentTotal}" step="0.01"></div>
         </div>
-        <label>CT Exams (hold Ctrl/Cmd for multi)</label>
-        <select id="ctExamSelect" multiple size="3">
-            ${allExamNames.map(en => `<option value="${en}" ${subConfig.ctExamNames.includes(en) ? 'selected' : ''}>${escapeHtml(en)}</option>`).join('')}
-        </select>
+        <label>CT Exams (Select to Include)</label>
+        <div id="ctCheckboxGroup" class="checkbox-group" style="display:flex; flex-wrap:wrap; gap:10px; padding:12px; background:#f8fafc; border:1px solid #cfdfed; border-radius:24px; min-height:50px; margin-bottom:10px;">
+            ${allExamNames.map(name => `
+            <label class="ct-chip ${subConfig.ctExamNames.includes(name)?'active':''}" style="display:flex; align-items:center; gap:8px; background:white; padding:8px 16px; border-radius:40px; border:1px solid ${subConfig.ctExamNames.includes(name)?'#1f6392':'#e2e8f0'}; cursor:pointer; font-size:0.85rem; transition:0.2s; user-select:none; ${subConfig.ctExamNames.includes(name)?'background:#eff6ff;':''}">
+                <input type="checkbox" class="ct-checkbox" value="${name}" ${subConfig.ctExamNames.includes(name)?'checked':''} style="display:none;">
+                <span class="tick-mark" style="display:${subConfig.ctExamNames.includes(name)?'inline':'none'}; color:#1f6392; font-weight:bold;">✔</span>
+                <span style="color:#1e4663; font-weight:500;">${escapeHtml(name)}</span>
+            </label>`).join('')}
+            ${allExamNames.length === 0 ? '<span style="color:#64748b; font-size:0.8rem;">No CT marks uploaded yet.</span>' : ''}
+        </div>
         <button onclick="saveMarkSheetConfig('${sub.courseId}','${sub.subjectId}')" style="margin-top:10px;">Save Config & Refresh</button>
     </div>`;
 
-    html += `<div style="overflow-x:auto;"><table class="mark-sheet-table"><thead><tr>
-        <th>SL</th><th>Roll/ID</th><th>Name</th>
-        <th id="headerAtt">Attendance (${subConfig.attendanceTotal})</th>
-        ${subConfig.ctExamNames.map(ct => `<th>${escapeHtml(ct)}<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','${ct}')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button></th>`).join('')}
-        <th id="headerCtAvg">CT Avg (Best ${subConfig.bestCtCount})</th>
-        <th id="headerAssign">Regular Assess. (${subConfig.assignmentTotal})<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','Regular Assessment')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button></th>
-        <th>Total</th><th>Action</th>
-    </tr></thead><tbody id="markSheetBody">`;
+    html += `<div id="markSheetTableArea" style="overflow-x:auto;">
+        <table class="mark-sheet-table"><thead><tr>
+            <th>SL</th><th>Roll/ID</th><th>Name</th>
+            <th id="headerAtt">Attendance (${subConfig.attendanceTotal})</th>
+            ${subConfig.ctExamNames.map(ct => `<th>${escapeHtml(ct)}<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','${ct}')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button></th>`).join('')}
+            <th id="headerCtAvg">CT Avg (Best ${subConfig.bestCtCount})</th>
+            <th id="headerAssign">Regular Assess. (${subConfig.assignmentTotal})<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','Regular Assessment')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button></th>
+            <th>Total</th><th>Action</th>
+        </tr></thead><tbody id="markSheetBody">`;
 
-    function getRowHtml(s, idx) {
+    function getRowHtml(s, idx, preservedAssignVal = null) {
         const sAtt        = allAttendance.filter(a => a.studentId == s.id);
-        const present     = sAtt.filter(r => r.status === 'present').length;
-        const attMarks    = sAtt.length ? (present / sAtt.length) * subConfig.attendanceTotal : 0;
+        const presentCnt  = sAtt.filter(r => r.status === 'present').length;
+        const lateCnt     = sAtt.filter(r => r.status === 'late').length;
+        const effective   = presentCnt + (lateCnt * 0.5);
+        const attMarks    = sAtt.length ? (effective / sAtt.length) * subConfig.attendanceTotal : 0;
         const ctMarks     = subConfig.ctExamNames.map(ct => {
             const m = allMarks.find(m => m.studentId == s.id && m.examName === ct);
             return m ? m.obtained : 0;
         });
         const bestCtNum   = Math.min(subConfig.bestCtCount, ctMarks.length);
         const ctAvg       = bestCtNum > 0 ? [...ctMarks].sort((a,b)=>b-a).slice(0,bestCtNum).reduce((a,b)=>a+b,0)/bestCtNum : 0;
+        
         const assignMark  = allMarks.find(m => m.studentId == s.id && m.examName === 'Regular Assessment');
-        const assignVal   = assignMark ? assignMark.obtained : 0;
-        const total       = attMarks + ctAvg + assignVal;
+        const assignVal   = preservedAssignVal !== null ? preservedAssignVal : (assignMark ? assignMark.obtained : "");
+        
+        const total       = attMarks + ctAvg + (parseFloat(assignVal) || 0);
 
         return `
             <td>${idx+1}</td><td>${escapeHtml(s.rollNo||'N/A')}</td><td>${escapeHtml(s.name)}</td>
@@ -849,8 +861,11 @@ async function showMarkSheetUI() {
         html += `<tr data-student-index="${idx}">${getRowHtml(s, idx)}</tr>`;
     });
     html += `</tbody></table>
-    <button onclick="saveAllAssignments('${sub.courseId}','${sub.subjectId}')" style="margin-top:15px;">💾 Save All Marks</button>
-    </div>`;
+    <div class="flex-row" style="margin-top:15px;">
+        <button onclick="saveAllAssignments('${sub.courseId}','${sub.subjectId}')">💾 Save All Marks</button>
+        <button onclick="showMarkSheetUI()" style="background:#6c757d; margin-left:10px;">🔄 Refresh Table</button>
+    </div>
+    </div></div>`;
     document.getElementById('dynamicContent').innerHTML = html;
 
     // --- Dynamic Listeners ---
@@ -858,20 +873,47 @@ async function showMarkSheetUI() {
         subConfig.attendanceTotal = parseFloat(document.getElementById('attTotal').value) || 0;
         subConfig.bestCtCount     = parseInt(document.getElementById('bestCtCount').value) || 1;
         subConfig.assignmentTotal = parseFloat(document.getElementById('assignTotal').value) || 0;
-        subConfig.ctExamNames     = Array.from(document.getElementById('ctExamSelect').selectedOptions).map(o => o.value);
+        subConfig.ctExamNames     = Array.from(document.querySelectorAll('.ct-checkbox:checked')).map(cb => cb.value);
         
         if (fullReRender) {
-            showMarkSheetUI(); // Fully re-render to update columns
+            // Re-render ONLY the table area
+            let tableHtml = `
+                <table class="mark-sheet-table"><thead><tr>
+                    <th>SL</th><th>Roll/ID</th><th>Name</th>
+                    <th id="headerAtt">Attendance (${subConfig.attendanceTotal})</th>
+                    ${subConfig.ctExamNames.map(ct => `<th>${escapeHtml(ct)}<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','${ct}')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button></th>`).join('')}
+                    <th id="headerCtAvg">CT Avg (Best ${subConfig.bestCtCount})</th>
+                    <th id="headerAssign">Regular Assess. (${subConfig.assignmentTotal})<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','Regular Assessment')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button></th>
+                    <th>Total</th><th>Action</th>
+                </tr></thead><tbody id="markSheetBody">`;
+            students.forEach((s, idx) => {
+                tableHtml += `<tr data-student-index="${idx}">${getRowHtml(s, idx)}</tr>`;
+            });
+            tableHtml += `</tbody></table>
+                <div class="flex-row" style="margin-top:15px;">
+                    <button onclick="saveAllAssignments('${sub.courseId}','${sub.subjectId}')">💾 Save All Marks</button>
+                    <button onclick="showMarkSheetUI()" style="background:#6c757d; margin-left:10px;">🔄 Refresh Table</button>
+                </div>`;
+            document.getElementById('markSheetTableArea').innerHTML = tableHtml;
+            attachAssignmentListeners();
             return;
         }
 
-        document.getElementById('headerAtt').innerText = `Attendance (${subConfig.attendanceTotal})`;
-        document.getElementById('headerCtAvg').innerText = `CT Avg (Best ${subConfig.bestCtCount})`;
-        document.getElementById('headerAssign').innerHTML = `Regular Assess. (${subConfig.assignmentTotal})<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','Regular Assessment')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button>`;
+        const hAtt = document.getElementById('headerAtt');
+        if (hAtt) hAtt.innerText = `Attendance (${subConfig.attendanceTotal})`;
+        
+        const hCtAvg = document.getElementById('headerCtAvg');
+        if (hCtAvg) hCtAvg.innerText = `CT Avg (Best ${subConfig.bestCtCount})`;
+        
+        const hAssign = document.getElementById('headerAssign');
+        if (hAssign) hAssign.innerHTML = `Regular Assess. (${subConfig.assignmentTotal})<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','Regular Assessment')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button>`;
 
         students.forEach((s, idx) => {
             const tr = document.querySelector(`tr[data-student-index="${idx}"]`);
-            if (tr) tr.innerHTML = getRowHtml(s, idx);
+            if (tr) {
+                const currentInputVal = tr.querySelector('.assignment-input')?.value || "";
+                tr.innerHTML = getRowHtml(s, idx, currentInputVal);
+            }
         });
         attachAssignmentListeners();
     };
@@ -891,8 +933,25 @@ async function showMarkSheetUI() {
     document.getElementById('attTotal').addEventListener('input', () => updateAllRows(false));
     document.getElementById('bestCtCount').addEventListener('input', () => updateAllRows(false));
     document.getElementById('assignTotal').addEventListener('input', () => updateAllRows(false));
-    document.getElementById('ctExamSelect').addEventListener('change', () => updateAllRows(true));
-    attachAssignmentListeners();
+    document.querySelectorAll('.ct-checkbox').forEach(cb => {
+        cb.addEventListener('change', function() {
+            const label = this.closest('label');
+            const tick = label.querySelector('.tick-mark');
+            if (this.checked) {
+                label.classList.add('active');
+                label.style.borderColor = '#1f6392';
+                label.style.background = '#eff6ff';
+                tick.style.display = 'inline';
+            } else {
+                label.classList.remove('active');
+                label.style.borderColor = '#e2e8f0';
+                label.style.background = 'white';
+                tick.style.display = 'none';
+            }
+            updateAllRows(true);
+        });
+    });
+    updateAllRows(true);
 }
 
 window.deleteExamAllStudents = async (courseId, subjectId, examName) => {
@@ -908,7 +967,7 @@ window.saveMarkSheetConfig = async (courseId, subjectId) => {
     const attTotal  = parseFloat(document.getElementById('attTotal').value);
     const bestCt    = parseInt(document.getElementById('bestCtCount').value);
     const assignTot = parseFloat(document.getElementById('assignTotal').value);
-    const ctExamNames = Array.from(document.getElementById('ctExamSelect').selectedOptions).map(o => o.value);
+    const ctExamNames = Array.from(document.querySelectorAll('.ct-checkbox:checked')).map(cb => cb.value);
     try {
         await apiPost(`/marks/config`, { courseId, subjectId, attendanceTotal: attTotal, bestCtCount: bestCt, assignmentTotal: assignTot, ctExamNames });
         showToast('Configuration saved');
@@ -1051,9 +1110,10 @@ async function showViewAttendanceUI() {
         const present = records.filter(r => r.status==='present').length;
         const absent  = records.filter(r => r.status==='absent').length;
         const late    = records.filter(r => r.status==='late').length;
+        const effective = present + (late * 0.5);
         const total   = records.length;
         html += `<h4>${escapeHtml(s.rollNo)} — ${escapeHtml(s.name)}</h4>
-            <p><strong>Present:</strong>${present} | <strong>Absent:</strong>${absent} | <strong>Late:</strong>${late} | <strong>Total:</strong>${total} (${total?(present/total*100).toFixed(1):0}%)</p>
+            <p><strong>Present:</strong>${present} | <strong>Absent:</strong>${absent} | <strong>Late:</strong>${late} | <strong>Total:</strong>${total} (${total?(effective/total*100).toFixed(1):0}%)</p>
             <table class="attendance-table"><thead><tr><th>Date</th><th>Status</th></tr></thead><tbody>
             ${records.map(r => `<tr><td>${new Date(r.date).toLocaleDateString()}</td><td>${r.status}</td></tr>`).join('')}
             </tbody></table><br>`;
@@ -1101,7 +1161,7 @@ async function loadTeacherContent(tab) {
         } else if (tab === 'notices') {
             await loadCombinedNotices();
         } else if (tab === 'privatemessages') {
-            const users = await apiGet('/users?role=student,admin');
+            const users = await apiGet('/users');
             const opts = `<option value="">-- Select Recipient --</option>` +
                 users.filter(u=>u.id!=currentUser.id).map(u=>`<option value="${u.id}">${escapeHtml(u.name)} (${u.role})</option>`).join('');
             const msgHtml = await renderMessagesUI();
@@ -1163,54 +1223,158 @@ async function loadAdminContent(tab) {
             const [courses, batches, teachers] = await Promise.all([
                 apiGet('/courses'), apiGet('/batches'), apiGet('/users?role=teacher')
             ]);
-            let html = `<div class="card"><h3>📚 Courses & Subjects</h3>`;
+            let html = `<div class="card"><h3>📚 Academic Courses & Subjects</h3>`;
             courses.forEach(c => {
                 const bName = batches.find(b=>b.id==c.batchId)?.name || 'N/A';
-                html += `<div style="border:1px solid #eef2f7; border-radius:20px; padding:12px; margin-bottom:12px;">
-                    <b>${escapeHtml(c.name)}</b> (Fee:${c.fee}) Batch:${escapeHtml(bName)}<br>
-                    <strong>Subjects:</strong>
-                    ${c.subjects.map(s=>`<span style="background:#eef2f7; padding:4px 12px; border-radius:40px; margin:2px;">
-                        ${escapeHtml(s.name)} (${teachers.find(t=>t.id==s.teacherId)?.name||'No teacher'})
-                        <button onclick="deleteSubject(${c.id},${s.id})" style="background:#c44536; padding:2px 8px;">✖</button>
-                    </span>`).join(' ')}<br>
-                    <button onclick="showAddSubjectForm(${c.id})">+ Add Subject</button>
-                    <button onclick="deleteCourse(${c.id})" style="background:#c44536;">Delete Course</button>
-                    <div id="addSubj-${c.id}" style="display:none; margin-top:10px;">
-                        <label>Subject Name</label><input id="newSubjName-${c.id}" placeholder="Subject">
-                        <label>Teacher</label>
-                        <select id="newSubjTeacher-${c.id}">
-                            ${teachers.map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
-                        </select>
-                        <button onclick="addSubjectToCourse(${c.id})">Add Subject</button>
+                html += `<div id="courseCard-${c.id}" style="border:1px solid #eef2f7; border-radius:20px; padding:15px; margin-bottom:15px; background:white; box-shadow:0 2px 5px rgba(0,0,0,0.02);">
+                    <div class="flex-row" style="justify-content:space-between; align-items:flex-start;">
+                        <div>
+                            <b id="courseNameDisp-${c.id}" style="font-size:1.1rem; color:#0b2b3b;">${escapeHtml(c.name)}</b> 
+                            <span id="courseFeeDisp-${c.id}" style="color:#64748b; font-size:0.9rem;">(Fee: ${c.fee} Tk)</span> 
+                            <span id="courseBatchDisp-${c.id}" style="background:#e0f2fe; color:#0369a1; padding:2px 10px; border-radius:40px; font-size:11px; font-weight:600; margin-left:5px;">Batch: ${escapeHtml(bName)}</span>
+                        </div>
+                        <div class="flex-row" style="gap:8px;">
+                            <button onclick="toggleEditCourse(${c.id})" style="background:#f1f5f9; color:#475569; padding:6px 14px; font-size:0.8rem;">✏️ Edit</button>
+                            <button onclick="deleteCourse(${c.id})" style="background:#fff1f2; color:#be123c; padding:6px 14px; font-size:0.8rem;">🗑️ Delete</button>
+                        </div>
+                    </div>
+
+                    <!-- Inline Edit Course Form -->
+                    <div id="editCourseForm-${c.id}" style="display:none; margin:15px 0; padding:15px; background:#f8fafc; border-radius:16px; border:1px solid #e2e8f0;">
+                        <div class="flex-row">
+                            <div style="flex:2"><label>Course Name</label><input id="editCourseName-${c.id}" value="${escapeHtml(c.name)}"></div>
+                            <div style="flex:1"><label>Fee (Tk)</label><input id="editCourseFee-${c.id}" type="number" value="${c.fee}"></div>
+                            <div style="flex:1"><label>Batch</label>
+                                <select id="editCourseBatch-${c.id}">${batches.map(b=>`<option value="${b.id}" ${b.id==c.batchId?'selected':''}>${escapeHtml(b.name)}</option>`).join('')}</select>
+                            </div>
+                        </div>
+                        <div class="flex-row" style="margin-top:10px;">
+                            <button onclick="updateCourse(${c.id})">Save Changes</button>
+                            <button onclick="toggleEditCourse(${c.id})" style="background:#64748b;">Cancel</button>
+                        </div>
+                    </div>
+
+                    <div style="margin-top:15px;">
+                        <div style="font-size:0.8rem; color:#64748b; text-transform:uppercase; font-weight:600; letter-spacing:0.05em; margin-bottom:8px;">Subjects</div>
+                        <div id="subjectsList-${c.id}" style="display:flex; flex-wrap:wrap; gap:8px;">
+                            ${c.subjects.map(s=>`
+                            <span id="subjSpan-${s.id}" style="background:#f1f5f9; padding:6px 14px; border-radius:40px; border-left:4px solid #1f6392; display:inline-flex; align-items:center; gap:8px;">
+                                <span id="subjNameDisp-${s.id}" style="font-weight:600;">${escapeHtml(s.name)}</span> 
+                                <span style="font-size:0.75rem; color:#64748b;">(${teachers.find(t=>t.id==s.teacherId)?.name||'No teacher'})</span>
+                                <button onclick="toggleEditSubject(${c.id}, ${s.id})" style="background:none; color:#1f6392; padding:0; border:none; cursor:pointer;">✏️</button>
+                                <button onclick="deleteSubject(${c.id},${s.id})" style="background:none; color:#be123c; padding:0; border:none; cursor:pointer;">✖</button>
+                            </span>`).join('')}
+                        </div>
+
+                        <!-- Inline Edit Subject Form -->
+                        <div id="editSubjForm-${c.id}" style="display:none; margin-top:12px; padding:12px; background:#fff; border:2px solid #1f6392; border-radius:16px;">
+                            <input type="hidden" id="editingSubjId-${c.id}">
+                            <div class="flex-row" style="gap:10px;">
+                                <div style="flex:2"><label>Subject Name</label><input id="editSubjName-${c.id}"></div>
+                                <div style="flex:1"><label>Teacher</label>
+                                    <select id="editSubjTeacher-${c.id}">
+                                        ${teachers.map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex-row" style="margin-top:10px;">
+                                <button onclick="updateSubject(${c.id})">Update Subject</button>
+                                <button onclick="toggleEditSubjectHide(${c.id})" style="background:#64748b;">Cancel</button>
+                            </div>
+                        </div>
+
+                        <button onclick="showAddSubjectForm(${c.id})" style="margin-top:12px; background:none; color:#1f6392; border:2px dashed #cbd5e1; padding:8px 20px; border-radius:16px; font-weight:600;">+ Add New Subject</button>
+                        
+                        <div id="addSubj-${c.id}" style="display:none; margin-top:12px; background:#f0f9ff; padding:15px; border-radius:16px; border:1px solid #bae6fd;">
+                            <div class="flex-row" style="align-items:flex-end;">
+                                <div style="flex:2"><label>Subject Name</label><input id="newSubjName-${c.id}" placeholder="e.g. Physics"></div>
+                                <div style="flex:1"><label>Teacher</label>
+                                    <select id="newSubjTeacher-${c.id}">
+                                        ${teachers.map(t=>`<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <button onclick="addSubjectToCourse(${c.id})" style="padding:12px 24px;">Add Now</button>
+                            </div>
+                        </div>
                     </div>
                 </div>`;
             });
-            html += `<hr><h4>Create New Course</h4>
+            html += `<hr><div style="margin-top:24px;"><h4>✨ Create New Course</h4>
                 <div class="flex-row">
-                    <div style="flex:1"><label>Course Name</label><input id="newCourseName"></div>
-                    <div style="flex:1"><label>Fee (Tk)</label><input id="newCourseFee" type="number"></div>
+                    <div style="flex:2"><label>Course Name</label><input id="newCourseName" placeholder="Course Title"></div>
+                    <div style="flex:1"><label>Fee (Tk)</label><input id="newCourseFee" type="number" placeholder="5000"></div>
                     <div style="flex:1"><label>Batch</label>
                         <select id="newCourseBatch">${batches.map(b=>`<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('')}</select>
                     </div>
-                    <button onclick="createCourse()" style="align-self:flex-end;">Create</button>
-                </div>
-            </div>`;
+                    <button onclick="createCourse()" style="align-self:flex-end; padding:12px 30px;">🚀 Create Course</button>
+                </div></div></div>`;
             cont.innerHTML = html;
+
+            window.toggleEditCourse = (id) => {
+                const el = document.getElementById(`editCourseForm-${id}`);
+                el.style.display = el.style.display === 'none' ? 'block' : 'none';
+            };
+
+            window.toggleEditSubject = (courseId, subjId) => {
+                const subj = courses.find(c => c.id == courseId).subjects.find(s => s.id == subjId);
+                document.getElementById(`editSubjForm-${courseId}`).style.display = 'block';
+                document.getElementById(`editingSubjId-${courseId}`).value = subjId;
+                document.getElementById(`editSubjName-${courseId}`).value = subj.name;
+                document.getElementById(`editSubjTeacher-${courseId}`).value = subj.teacherId || '';
+            };
+
+            window.toggleEditSubjectHide = (courseId) => {
+                document.getElementById(`editSubjForm-${courseId}`).style.display = 'none';
+            };
+
+            window.updateCourse = async (id) => {
+                const name = document.getElementById(`editCourseName-${id}`).value;
+                const fee  = document.getElementById(`editCourseFee-${id}`).value;
+                const bid  = document.getElementById(`editCourseBatch-${id}`).value;
+                try {
+                    await apiPut(`/courses/${id}`, { name, fee, batchId: bid });
+                    showToast('Course updated');
+                    loadAdminContent('courses');
+                } catch (e) { showToast('Update failed', 'error'); }
+            };
+
+            window.updateSubject = async (courseId) => {
+                const subjId = document.getElementById(`editingSubjId-${courseId}`).value;
+                const name   = document.getElementById(`editSubjName-${courseId}`).value;
+                const tid    = document.getElementById(`editSubjTeacher-${courseId}`).value;
+                try {
+                    await apiPut(`/subjects/${subjId}`, { name, teacherId: tid });
+                    showToast('Subject updated');
+                    loadAdminContent('courses');
+                } catch (e) { showToast('Update failed', 'error'); }
+            };
 
             window.showAddSubjectForm = id => {
                 const d = document.getElementById(`addSubj-${id}`);
                 if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
             };
+
             window.addSubjectToCourse = async id => {
-                const name = document.getElementById(`newSubjName-${id}`).value;
-                const tid  = document.getElementById(`newSubjTeacher-${id}`).value;
+                const nameInp = document.getElementById(`newSubjName-${id}`);
+                const teacherSel = document.getElementById(`newSubjTeacher-${id}`);
+                const name = nameInp.value;
+                const tid  = teacherSel.value;
                 if (!name || !tid) return showToast('Subject name and teacher required', 'error');
-                try { await apiPost(`/courses/${id}/subjects`, { name, teacherId: tid }); loadAdminContent('courses'); }
-                catch (e) { showToast('Failed', 'error'); }
+                
+                try { 
+                    await apiPost(`/courses/${id}/subjects`, { name, teacherId: tid }); 
+                    showToast('Subject added');
+                    loadAdminContent('courses');
+                } catch (e) { showToast('Failed to add subject', 'error'); }
             };
             window.deleteSubject = async (cid, sid) => {
-                try { await apiDelete(`/subjects/${sid}`); loadAdminContent('courses'); }
-                catch (e) { showToast('Failed', 'error'); }
+                if (!confirm('Delete this subject?')) return;
+                try { 
+                    await apiDelete(`/subjects/${sid}`); 
+                    showToast('Subject deleted'); 
+                    const span = document.getElementById(`subjSpan-${sid}`);
+                    if (span) span.remove();
+                } catch (e) { showToast('Failed', 'error'); }
             };
             window.createCourse = async () => {
                 const name = document.getElementById('newCourseName').value;

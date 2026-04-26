@@ -55,6 +55,12 @@ public class SubjectController {
             Long teacherId = Long.parseLong(payload.get("teacherId").toString());
             subject.setTeacher(userRepository.findById(teacherId).orElse(null));
         }
-        return ResponseEntity.ok(subjectRepository.save(subject));
+        Subject saved = subjectRepository.save(subject);
+        
+        Map<String, Object> res = new HashMap<>();
+        res.put("id", saved.getId());
+        res.put("name", saved.getName());
+        res.put("teacherId", saved.getTeacher() != null ? saved.getTeacher().getId() : null);
+        return ResponseEntity.ok(res);
     }
 }

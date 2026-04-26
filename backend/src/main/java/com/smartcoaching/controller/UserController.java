@@ -16,10 +16,14 @@ import java.util.stream.Collectors;
 public class UserController {
 
     private final UserRepository userRepository;
+    private final com.smartcoaching.repository.EnrollmentRepository enrollmentRepository;
     private final PasswordEncoder passwordEncoder;
 
-    public UserController(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserController(UserRepository userRepository, 
+                          com.smartcoaching.repository.EnrollmentRepository enrollmentRepository,
+                          PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
+        this.enrollmentRepository = enrollmentRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -54,8 +58,9 @@ public class UserController {
 
     @GetMapping("/students-for-course/{courseId}")
     public ResponseEntity<List<AuthResponse.UserDto>> getStudentsForCourse(@PathVariable Long courseId) {
-        List<User> students = userRepository.findByRole("student");
-        List<AuthResponse.UserDto> dtos = students.stream()
+        List<com.smartcoaching.entity.Enrollment> enrollments = enrollmentRepository.findByCourseId(courseId);
+        List<AuthResponse.UserDto> dtos = enrollments.stream()
+                .map(e -> e.getStudent())
                 .map(u -> new AuthResponse.UserDto(u.getId(), u.getName(), u.getEmail(), u.getRole(),
                         u.getBatch() != null ? u.getBatch().getId() : null, u.getPhone(), u.getRollNo()))
                 .collect(Collectors.toList());
