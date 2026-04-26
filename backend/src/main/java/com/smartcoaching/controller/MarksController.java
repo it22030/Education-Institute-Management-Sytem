@@ -21,13 +21,44 @@ public class MarksController {
     private final UserRepository userRepository;
     private final CourseRepository courseRepository;
     private final SubjectRepository subjectRepository;
+    private final com.smartcoaching.repository.MarkConfigRepository markConfigRepository;
 
     public MarksController(MarkRepository markRepository, UserRepository userRepository,
-                           CourseRepository courseRepository, SubjectRepository subjectRepository) {
+                           CourseRepository courseRepository, SubjectRepository subjectRepository,
+                           com.smartcoaching.repository.MarkConfigRepository markConfigRepository) {
         this.markRepository = markRepository;
         this.userRepository = userRepository;
         this.courseRepository = courseRepository;
         this.subjectRepository = subjectRepository;
+        this.markConfigRepository = markConfigRepository;
+    }
+
+    @GetMapping("/config/{courseId}/{subjectId}")
+    public ResponseEntity<?> getConfig(@PathVariable Long courseId, @PathVariable Long subjectId) {
+        java.util.Optional<com.smartcoaching.entity.MarkConfig> config = markConfigRepository.findByCourseIdAndSubjectId(courseId, subjectId);
+        if (config.isPresent()) {
+            return ResponseEntity.ok(config.get());
+        }
+        return ResponseEntity.ok(new HashMap<>());
+    }
+
+    @PostMapping("/config")
+    public ResponseEntity<?> saveConfig(@RequestBody Map<String, Object> payload) {
+        Long courseId = Long.parseLong(payload.get("courseId").toString());
+        Long subjectId = Long.parseLong(payload.get("subjectId").toString());
+        
+        com.smartcoaching.entity.MarkConfig config = markConfigRepository.findByCourseIdAndSubjectId(courseId, subjectId)
+                .orElse(new com.smartcoaching.entity.MarkConfig());
+        
+        config.setCourseId(courseId);
+        config.setSubjectId(subjectId);
+        config.setAttendanceTotal(Double.parseDouble(payload.get("attendanceTotal").toString()));
+        config.setBestCtCount(Integer.parseInt(payload.get("bestCtCount").toString()));
+        config.setAssignmentTotal(Double.parseDouble(payload.get("assignmentTotal").toString()));
+        config.setCtExamNames((List<String>) payload.get("ctExamNames"));
+        
+        markConfigRepository.save(config);
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping
