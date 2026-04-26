@@ -789,7 +789,8 @@ async function showMarkSheetUI() {
         apiGet(`/attendance?courseId=${sub.courseId}&subjectId=${sub.subjectId}`),
         apiGet(`/marks/config/${sub.courseId}/${sub.subjectId}`).catch(() => ({}))
     ]);
-    const allExamNames = [...new Set(allMarks.map(m => m.examName))];
+
+    const allExamNames = [...new Set(allMarks.map(m => m.examName))].filter(en => en !== 'Regular Assessment');
     const subConfig = {
         attendanceTotal: configData.attendanceTotal ?? 0,
         ctExamNames:     configData.ctExamNames     ?? allExamNames.filter(n => n.toUpperCase().includes('CT')),
@@ -802,7 +803,7 @@ async function showMarkSheetUI() {
         <div class="flex-row">
             <div style="flex:1"><label>Attendance Total</label><input type="number" id="attTotal" value="${subConfig.attendanceTotal}" step="0.01"></div>
             <div style="flex:1"><label>Best CT Count</label><input type="number" id="bestCtCount" value="${subConfig.bestCtCount}" min="1"></div>
-            <div style="flex:1"><label>Regular Assessment</label><input type="number" id="assignTotal" value="${subConfig.assignmentTotal}" step="0.01"></div>
+            <div style="flex:1"><label>Regular Assessment Total</label><input type="number" id="assignTotal" value="${subConfig.assignmentTotal}" step="0.01"></div>
         </div>
         <label>CT Exams (hold Ctrl/Cmd for multi)</label>
         <select id="ctExamSelect" multiple size="3">
@@ -813,14 +814,14 @@ async function showMarkSheetUI() {
 
     html += `<div style="overflow-x:auto;"><table class="mark-sheet-table"><thead><tr>
         <th>SL</th><th>Roll/ID</th><th>Name</th>
-        <th>Attendance (${subConfig.attendanceTotal})</th>
+        <th id="headerAtt">Attendance (${subConfig.attendanceTotal})</th>
         ${subConfig.ctExamNames.map(ct => `<th>${escapeHtml(ct)}<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','${ct}')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button></th>`).join('')}
-        <th>CT Avg (Best ${subConfig.bestCtCount})</th>
-        <th>Regular Assess. (${subConfig.assignmentTotal})<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','Regular Assessment')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button></th>
+        <th id="headerCtAvg">CT Avg (Best ${subConfig.bestCtCount})</th>
+        <th id="headerAssign">Regular Assess. (${subConfig.assignmentTotal})<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','Regular Assessment')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button></th>
         <th>Total</th><th>Action</th>
-    </tr></thead><tbody>`;
+    </tr></thead><tbody id="markSheetBody">`;
 
-    students.forEach((s, idx) => {
+    function getRowHtml(s, idx) {
         const sAtt        = allAttendance.filter(a => a.studentId == s.id);
         const present     = sAtt.filter(r => r.status === 'present').length;
         const attMarks    = sAtt.length ? (present / sAtt.length) * subConfig.attendanceTotal : 0;
@@ -828,36 +829,70 @@ async function showMarkSheetUI() {
             const m = allMarks.find(m => m.studentId == s.id && m.examName === ct);
             return m ? m.obtained : 0;
         });
-        const bestCt      = Math.min(subConfig.bestCtCount, ctMarks.length);
-        const ctAvg       = bestCt > 0 ? [...ctMarks].sort((a,b)=>b-a).slice(0,bestCt).reduce((a,b)=>a+b,0)/bestCt : 0;
+        const bestCtNum   = Math.min(subConfig.bestCtCount, ctMarks.length);
+        const ctAvg       = bestCtNum > 0 ? [...ctMarks].sort((a,b)=>b-a).slice(0,bestCtNum).reduce((a,b)=>a+b,0)/bestCtNum : 0;
         const assignMark  = allMarks.find(m => m.studentId == s.id && m.examName === 'Regular Assessment');
         const assignVal   = assignMark ? assignMark.obtained : 0;
         const total       = attMarks + ctAvg + assignVal;
 
-        html += `<tr>
+        return `
             <td>${idx+1}</td><td>${escapeHtml(s.rollNo||'N/A')}</td><td>${escapeHtml(s.name)}</td>
-            <td>${attMarks.toFixed(1)}</td>
+            <td class="cell-att">${attMarks.toFixed(1)}</td>
             ${ctMarks.map(m => `<td>${m}</td>`).join('')}
-            <td>${ctAvg.toFixed(1)}</td>
+            <td class="cell-ctavg">${ctAvg.toFixed(1)}</td>
             <td><input type="number" step="0.01" value="${assignVal}" class="assignment-input" data-student="${s.id}" style="width:80px;"></td>
             <td class="total-cell" id="total_${s.id}">${total.toFixed(1)}</td>
-            <td><button onclick="openEditMarksModal('${sub.courseId}','${sub.subjectId}',${s.id})">Edit Marks</button></td>
-        </tr>`;
+            <td><button onclick="openEditMarksModal('${sub.courseId}','${sub.subjectId}',${s.id})">Edit Marks</button></td>`;
+    }
+
+    students.forEach((s, idx) => {
+        html += `<tr data-student-index="${idx}">${getRowHtml(s, idx)}</tr>`;
     });
     html += `</tbody></table>
     <button onclick="saveAllAssignments('${sub.courseId}','${sub.subjectId}')" style="margin-top:15px;">💾 Save All Marks</button>
     </div>`;
     document.getElementById('dynamicContent').innerHTML = html;
 
-    document.querySelectorAll('.assignment-input').forEach(inp => {
-        inp.addEventListener('input', function() {
-            const sid   = this.dataset.student;
-            const cells = this.closest('tr').querySelectorAll('td');
-            const att   = parseFloat(cells[3].innerText) || 0;
-            const ct    = parseFloat(cells[3 + subConfig.ctExamNames.length + 1].innerText) || 0;
-            document.getElementById(`total_${sid}`).innerText = (att + ct + (parseFloat(this.value)||0)).toFixed(1);
+    // --- Dynamic Listeners ---
+    const updateAllRows = (fullReRender = false) => {
+        subConfig.attendanceTotal = parseFloat(document.getElementById('attTotal').value) || 0;
+        subConfig.bestCtCount     = parseInt(document.getElementById('bestCtCount').value) || 1;
+        subConfig.assignmentTotal = parseFloat(document.getElementById('assignTotal').value) || 0;
+        subConfig.ctExamNames     = Array.from(document.getElementById('ctExamSelect').selectedOptions).map(o => o.value);
+        
+        if (fullReRender) {
+            showMarkSheetUI(); // Fully re-render to update columns
+            return;
+        }
+
+        document.getElementById('headerAtt').innerText = `Attendance (${subConfig.attendanceTotal})`;
+        document.getElementById('headerCtAvg').innerText = `CT Avg (Best ${subConfig.bestCtCount})`;
+        document.getElementById('headerAssign').innerHTML = `Regular Assess. (${subConfig.assignmentTotal})<br><button onclick="deleteExamAllStudents('${sub.courseId}','${sub.subjectId}','Regular Assessment')" style="background:#c44536; font-size:0.7rem; padding:2px 8px; margin-top:4px;">🗑️ Delete Exam</button>`;
+
+        students.forEach((s, idx) => {
+            const tr = document.querySelector(`tr[data-student-index="${idx}"]`);
+            if (tr) tr.innerHTML = getRowHtml(s, idx);
         });
-    });
+        attachAssignmentListeners();
+    };
+
+    function attachAssignmentListeners() {
+        document.querySelectorAll('.assignment-input').forEach(inp => {
+            inp.addEventListener('input', function() {
+                const sid   = this.dataset.student;
+                const tr    = this.closest('tr');
+                const att   = parseFloat(tr.querySelector('.cell-att').innerText) || 0;
+                const ct    = parseFloat(tr.querySelector('.cell-ctavg').innerText) || 0;
+                document.getElementById(`total_${sid}`).innerText = (att + ct + (parseFloat(this.value)||0)).toFixed(1);
+            });
+        });
+    }
+
+    document.getElementById('attTotal').addEventListener('input', () => updateAllRows(false));
+    document.getElementById('bestCtCount').addEventListener('input', () => updateAllRows(false));
+    document.getElementById('assignTotal').addEventListener('input', () => updateAllRows(false));
+    document.getElementById('ctExamSelect').addEventListener('change', () => updateAllRows(true));
+    attachAssignmentListeners();
 }
 
 window.deleteExamAllStudents = async (courseId, subjectId, examName) => {
