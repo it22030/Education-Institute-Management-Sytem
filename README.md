@@ -1,5 +1,6 @@
 # 📘 Education Institute Management System (Smart Coaching)
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Render-46E3B7.svg?logo=render)](https://education-office-management.onrender.com/)
 [![Java 17](https://img.shields.io/badge/Java-17-orange.svg?logo=openjdk)](https://www.oracle.com/java/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.5-brightgreen.svg?logo=springboot)](https://spring.io/projects/spring-boot)
 [![Spring Security](https://img.shields.io/badge/Spring%20Security-6.x-6DB33F.svg?logo=springsecurity)](https://spring.io/projects/spring-security)
@@ -8,6 +9,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A modern, full-stack **Education & Coaching Institute Management System** built with **Spring Boot 3** RESTful APIs and a responsive single-page web interface. It provides comprehensive role-based workflows for **Administrators**, **Teachers**, and **Students** to streamline academic and administrative tasks including enrollment, attendance tracking, dynamic grading/exam marks, routine management, fee payments, and announcements.
+
+🌐 **Live Demo**: [https://education-office-management.onrender.com/](https://education-office-management.onrender.com/)  
+📂 **GitHub Repository**: [https://github.com/it22030/Education-Institute-Management-Sytem](https://github.com/it22030/Education-Institute-Management-Sytem)
 
 ---
 
